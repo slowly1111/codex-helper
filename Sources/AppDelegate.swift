@@ -563,29 +563,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func applyCompactQuotaTitle(primary: String, secondary: String, to button: NSStatusBarButton) {
         let topParagraph = NSMutableParagraphStyle()
         topParagraph.alignment = .center
-        topParagraph.minimumLineHeight = 8
-        topParagraph.maximumLineHeight = 8
+        topParagraph.minimumLineHeight = 9
+        topParagraph.maximumLineHeight = 9
 
         let bottomParagraph = NSMutableParagraphStyle()
         bottomParagraph.alignment = .center
-        bottomParagraph.minimumLineHeight = 13
-        bottomParagraph.maximumLineHeight = 13
+        bottomParagraph.minimumLineHeight = 15
+        bottomParagraph.maximumLineHeight = 15
 
         let title = NSMutableAttributedString(
             string: secondary + "\n",
             attributes: [
-                .font: NSFont.systemFont(ofSize: 7.5, weight: .medium),
-                .foregroundColor: NSColor.secondaryLabelColor,
-                .paragraphStyle: topParagraph
+                .font: NSFont.systemFont(ofSize: 8, weight: .medium),
+                .foregroundColor: NSColor.labelColor,
+                .paragraphStyle: topParagraph,
+                .baselineOffset: -1.5
             ]
         )
         title.append(NSAttributedString(
             string: primary,
             attributes: [
-                .font: NSFont.monospacedDigitSystemFont(ofSize: 12.5, weight: .semibold),
+                .font: NSFont.monospacedDigitSystemFont(ofSize: 14, weight: .semibold),
                 .foregroundColor: NSColor.labelColor,
                 .paragraphStyle: bottomParagraph,
-                .baselineOffset: -0.5
+                .baselineOffset: -3
             ]
         ))
 

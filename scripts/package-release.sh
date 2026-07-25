@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="${0:A:h:h}"
-VERSION="${VERSION:-0.8.4}"
+VERSION="${VERSION:-0.8.5}"
 DIST_DIR="${DIST_DIR:-$ROOT/dist}"
 BUILD_DIR="$ROOT/.build/notarized"
 APP_PATH="$BUILD_DIR/Codex Helper.app"
