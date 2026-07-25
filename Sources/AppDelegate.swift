@@ -84,11 +84,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func configureStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = statusItem.button {
-            button.image = NSImage(systemSymbolName: "arrow.triangle.2.circlepath.circle.fill", accessibilityDescription: "Codex Helper")
-            button.imagePosition = .imageLeading
             button.target = self
             button.action = #selector(statusItemClicked(_:))
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+            button.alignment = .center
+            button.cell?.wraps = true
+            button.cell?.lineBreakMode = .byClipping
         }
         refreshInterface()
     }
@@ -514,26 +515,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard let button = statusItem?.button else { return }
         let config = configStore.load()
         let remainingPercent = primaryRemainingPercent
-        let staleMarker: String
+        let isStale: Bool
         if case .unavailable = usageService.status, usageService.snapshot != nil {
-            staleMarker = " ⚠︎"
+            isStale = true
         } else {
-            staleMarker = ""
+            isStale = false
         }
         if config.showQuotaInMenuBar, let remainingPercent {
-            var status = formatQuotaPercent(remainingPercent) + staleMarker
-            if let resetsAt = primaryUsageWindow?.resetsAt {
-                status += " · " + formatCompactResetDistance(
-                    until: resetsAt,
+            let primary = formatQuotaPercent(remainingPercent)
+            var secondary = primaryUsageWindow?.resetsAt.map {
+                formatMenuBarResetLabel(
+                    until: $0,
                     isChinese: configStore.isChinese()
                 )
-            }
-            button.title = "  \(status)"
+            } ?? "Codex"
+            if isStale { secondary = "⚠︎ \(secondary)" }
+            applyCompactQuotaTitle(primary: primary, secondary: secondary, to: button)
         } else {
+            statusItem.length = NSStatusItem.squareLength
+            button.attributedTitle = NSAttributedString()
             button.title = ""
+            button.image = NSImage(
+                systemSymbolName: "arrow.triangle.2.circlepath.circle.fill",
+                accessibilityDescription: "Codex Helper"
+            )
+            button.imagePosition = .imageOnly
         }
         if let remainingPercent {
-            if staleMarker.isEmpty {
+            if !isStale {
                 button.toolTip = text(
                     "Codex quota: \(formatQuotaPercent(remainingPercent)) left · Click for overview · Right-click for full menu",
                     "Codex 额度：剩余 \(formatQuotaPercent(remainingPercent)) · 点击查看概览 · 右键打开完整菜单"
@@ -547,6 +556,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         } else {
             button.toolTip = text("Codex Helper · quota unavailable", "Codex Helper · 额度暂不可用")
         }
+        button.setAccessibilityLabel("Codex Helper")
+        button.setAccessibilityValue(button.toolTip)
+    }
+
+    private func applyCompactQuotaTitle(primary: String, secondary: String, to button: NSStatusBarButton) {
+        let topParagraph = NSMutableParagraphStyle()
+        topParagraph.alignment = .center
+        topParagraph.minimumLineHeight = 8
+        topParagraph.maximumLineHeight = 8
+
+        let bottomParagraph = NSMutableParagraphStyle()
+        bottomParagraph.alignment = .center
+        bottomParagraph.minimumLineHeight = 13
+        bottomParagraph.maximumLineHeight = 13
+
+        let title = NSMutableAttributedString(
+            string: secondary + "\n",
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 7.5, weight: .medium),
+                .foregroundColor: NSColor.secondaryLabelColor,
+                .paragraphStyle: topParagraph
+            ]
+        )
+        title.append(NSAttributedString(
+            string: primary,
+            attributes: [
+                .font: NSFont.monospacedDigitSystemFont(ofSize: 12.5, weight: .semibold),
+                .foregroundColor: NSColor.labelColor,
+                .paragraphStyle: bottomParagraph,
+                .baselineOffset: -0.5
+            ]
+        ))
+
+        let bounds = title.boundingRect(
+            with: NSSize(
+                width: CGFloat.greatestFiniteMagnitude,
+                height: CGFloat.greatestFiniteMagnitude
+            ),
+            options: [.usesLineFragmentOrigin]
+        )
+        statusItem.length = min(max(ceil(bounds.width) + 10, 38), 58)
+        button.image = nil
+        button.imagePosition = .noImage
+        button.title = ""
+        button.attributedTitle = title
     }
 
     private func addUsageItems(to menu: NSMenu) {

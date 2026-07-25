@@ -1044,6 +1044,16 @@ func runSelfTest() -> Int32 {
               from: Date(timeIntervalSince1970: 10_000),
               isChinese: true
           ) == "1天1时",
+          formatMenuBarResetLabel(
+              until: Date(timeIntervalSince1970: 100_000),
+              from: Date(timeIntervalSince1970: 10_000),
+              isChinese: true
+          ) == "1天重置",
+          formatMenuBarResetLabel(
+              until: Date(timeIntervalSince1970: 13_661),
+              from: Date(timeIntervalSince1970: 10_000),
+              isChinese: false
+          ) == "1h reset",
           formatResetCountdown(
               until: Date(timeIntervalSince1970: 13_661),
               from: Date(timeIntervalSince1970: 10_000),

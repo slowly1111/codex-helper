@@ -37,6 +37,24 @@ func formatCompactResetDistance(
     return isChinese ? "\(minutes)分" : "\(minutes)m"
 }
 
+func formatMenuBarResetLabel(
+    until reset: Date,
+    from now: Date = Date(),
+    isChinese: Bool
+) -> String {
+    let totalMinutes = max(Int(ceil(reset.timeIntervalSince(now) / 60)), 0)
+    let days = totalMinutes / (24 * 60)
+    let hours = totalMinutes / 60
+
+    if days > 0 {
+        return isChinese ? "\(days)天重置" : "\(days)d reset"
+    }
+    if hours > 0 {
+        return isChinese ? "\(hours)时重置" : "\(hours)h reset"
+    }
+    return isChinese ? "\(totalMinutes)分重置" : "\(totalMinutes)m reset"
+}
+
 func formatResetCountdown(
     until reset: Date,
     from now: Date = Date(),
