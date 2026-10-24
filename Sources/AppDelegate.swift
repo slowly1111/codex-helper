@@ -65,6 +65,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        menuBarPanel.close()
         agent.stop()
         usageService.stop()
         updater.stop()
@@ -281,6 +282,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc func showDashboard(_ sender: Any?) {
+        menuBarPanel.close()
         dashboard.show(model: makeDashboardModel())
     }
 
