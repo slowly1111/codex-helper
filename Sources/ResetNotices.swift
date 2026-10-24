@@ -95,6 +95,19 @@ struct ResetNotice: Codable, Equatable, Identifiable {
 
     var originalLink: URL? { safeResetOriginalURL(originalURL) }
 
+    var presentationFingerprint: String {
+        let values = [id, day, kind, title, status.rawValue, scope, window ?? "", confirmationTime ?? ""]
+        return resetDigest(String(data: (try? JSONEncoder().encode(values)) ?? Data(), encoding: .utf8) ?? "")
+    }
+
+    func timeDescription(chinese: Bool) -> String {
+        if let window { return window + (chinese ? "（北京时间）" : " (Beijing time)") }
+        if let confirmationTime {
+            return chinese ? "来源确认帖：\(confirmationTime)（北京时间）" : "Source confirmation: \(confirmationTime) (Beijing time)"
+        }
+        return chinese ? "具体时间尚未公布" : "Exact time not announced"
+    }
+
     var fingerprint: String {
         let values = [id, day, kind, title, status.rawValue, scope, window ?? "", confirmationTime ?? "", originalURL ?? "", sourceRevision]
         let encoded = (try? JSONEncoder().encode(values)) ?? Data()
@@ -156,9 +169,10 @@ func parseResetDay(_ data: Data, expectedDay: String, expectedVersion: String) t
     let response = try JSONDecoder().decode(ResetDayResponse.self, from: data)
     guard response.date == expectedDay, response.version == expectedVersion,
           response.events.count <= 100 else { throw ResetSyncError.invalidData }
+    var identifiers = Set<String>()
     return try response.events.compactMap { event in
         guard ["direct_reset", "reset_credit"].contains(event.type) else { return nil }
-        guard !event.id.isEmpty, event.id.count <= 256,
+        guard !event.id.isEmpty, event.id.count <= 256, identifiers.insert(event.id).inserted, (event.posts?.count ?? 0) <= 100,
               let revision = ResetDates.parse(event.updatedAt) ?? ResetDates.parse(event.confirmedAt) ?? ResetDates.parse(event.createdAt) else {
             throw ResetSyncError.invalidData
         }
@@ -179,8 +193,9 @@ func parseResetDay(_ data: Data, expectedDay: String, expectedVersion: String) t
             windowText = prefix + ResetDates.time(start)
             if let end, end != start { windowText! += " 至 " + ResetDates.time(end) }
         }
-        let originalURL = event.posts?.compactMap { safeResetOriginalURL($0.url)?.absoluteString }.first
-        let postContent = (event.posts ?? []).prefix(10).map { [$0.id, String(($0.text ?? "").prefix(1000))] }
+        let originalURL = event.posts?.compactMap { safeResetOriginalURL($0.url)?.absoluteString }.sorted().first
+        let postContent = (event.posts ?? []).map { [$0.id, String(($0.text ?? "").prefix(1000))] }
+            .sorted { $0.lexicographicallyPrecedes($1) }
         let revisionData = (try? JSONEncoder().encode(postContent)) ?? Data()
         let sourceRevision = SHA256.hash(data: revisionData).map { String(format: "%02x", $0) }.joined()
         return ResetNotice(
@@ -195,7 +210,10 @@ func parseResetDay(_ data: Data, expectedDay: String, expectedVersion: String) t
 func mergeResetNotices(_ values: [ResetNotice], days: [String]) -> [ResetNotice] {
     var merged: [String: ResetNotice] = [:]
     for notice in values where days.contains(notice.day) {
-        if let previous = merged[notice.id], previous.revisionDate > notice.revisionDate { continue }
+        if let previous = merged[notice.id] {
+            if previous.revisionDate > notice.revisionDate { continue }
+            if previous.revisionDate == notice.revisionDate, previous.fingerprint >= notice.fingerprint { continue }
+        }
         merged[notice.id] = notice
     }
     return merged.values.sorted {
@@ -204,8 +222,13 @@ func mergeResetNotices(_ values: [ResetNotice], days: [String]) -> [ResetNotice]
     }
 }
 
-func changedResetNotices(_ notices: [ResetNotice], previous: [String: String]?, today: String) -> [ResetNotice] {
+func changedResetNotices(_ notices: [ResetNotice], previous: [String: String]?, today: String, legacyNotices: [ResetNotice]? = nil) -> [ResetNotice] {
     guard let previous else { return Array(notices.filter { $0.day == today }.prefix(1)) }
+    if let legacyNotices {
+        var old: [String: String] = [:]
+        for notice in legacyNotices { old[notice.id] = notice.presentationFingerprint }
+        return notices.filter { old[$0.id] != $0.presentationFingerprint }
+    }
     return notices.filter { previous[$0.id] != $0.fingerprint }
 }
 
@@ -218,6 +241,8 @@ private struct ResetSnapshot: Codable {
 }
 
 private struct ResetCache: Codable {
+    // Optional for old cache files. Canonical post ordering starts at version 2.
+    var fingerprintVersion: Int?
     var snapshot: ResetSnapshot?
     var fingerprints: [String: String] = [:]
     var unreadIDs: Set<String> = []
@@ -225,7 +250,95 @@ private struct ResetCache: Codable {
     var notifiedKeys: Set<String> = []
 }
 
-final class ResetNoticeService: NSObject, UNUserNotificationCenterDelegate, URLSessionTaskDelegate {
+// Delegate callbacks run on the main queue, as do the service's state changes.
+// Apply the limit while receiving bytes, including chunked/decompressed bodies.
+final class ResetHTTPClient: NSObject, URLSessionDataDelegate {
+    static let maximumBytes = 1_000_000
+    private struct Pending {
+        var data = Data()
+        let completion: (Result<Data, Error>) -> Void
+    }
+    private let configuration: URLSessionConfiguration
+    private var session: URLSession?
+    private var pending: [Int: Pending] = [:]
+
+    init(configuration: URLSessionConfiguration = .ephemeral) {
+        self.configuration = configuration.copy() as! URLSessionConfiguration
+        self.configuration.urlCache = nil
+        self.configuration.httpCookieStorage = nil
+        self.configuration.urlCredentialStorage = nil
+        self.configuration.httpShouldSetCookies = false
+        self.configuration.timeoutIntervalForRequest = 20
+        self.configuration.timeoutIntervalForResource = 30
+    }
+
+    func load(_ url: URL, completion: @escaping (Result<Data, Error>) -> Void) {
+        guard url.scheme == "https", url.host == "aihot.news", url.user == nil, url.password == nil,
+              url.port == nil, url.query == nil, url.fragment == nil,
+              url.path == "/api/site/codex-reset/version" ||
+                (url.path.hasPrefix("/api/site/codex-reset/days/") && ResetDates.validDay(String(url.path.dropFirst("/api/site/codex-reset/days/".count)))) else {
+            completion(.failure(ResetSyncError.invalidData))
+            return
+        }
+        if session == nil { session = URLSession(configuration: configuration, delegate: self, delegateQueue: .main) }
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("Codex-Helper-Reset-Monitor/0.8.5", forHTTPHeaderField: "User-Agent")
+        guard let task = session?.dataTask(with: request) else { return }
+        pending[task.taskIdentifier] = Pending(completion: completion)
+        task.resume()
+    }
+
+    func cancel() {
+        let completions = pending.values.map(\.completion)
+        pending.removeAll()
+        let previous = session
+        session = nil
+        previous?.invalidateAndCancel()
+        completions.forEach { $0(.failure(URLError(.cancelled))) }
+    }
+
+    private func finish(_ task: URLSessionTask, _ result: Result<Data, Error>) {
+        pending.removeValue(forKey: task.taskIdentifier)?.completion(result)
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse, completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
+        guard session === self.session, pending[dataTask.taskIdentifier] != nil else { completionHandler(.cancel); return }
+        guard let response = response as? HTTPURLResponse, response.statusCode == 200,
+              response.url == dataTask.originalRequest?.url,
+              response.expectedContentLength <= Int64(Self.maximumBytes) else {
+            completionHandler(.cancel)
+            finish(dataTask, .failure(ResetSyncError.invalidData))
+            return
+        }
+        completionHandler(.allow)
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        guard session === self.session, let currentBytes = pending[dataTask.taskIdentifier]?.data.count else { return }
+        guard data.count <= Self.maximumBytes - currentBytes else {
+            dataTask.cancel()
+            finish(dataTask, .failure(ResetSyncError.invalidData))
+            return
+        }
+        pending[dataTask.taskIdentifier]?.data.append(data)
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        guard session === self.session, let current = pending[task.taskIdentifier] else { return }
+        finish(task, error.map { .failure($0) } ?? .success(current.data))
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
+        // API endpoints are fixed; do not follow a redirect to a different resource.
+        completionHandler(nil)
+        guard session === self.session else { return }
+        task.cancel()
+        finish(task, .failure(ResetSyncError.invalidData))
+    }
+}
+
+final class ResetNoticeService: NSObject, UNUserNotificationCenterDelegate {
     var onChange: (() -> Void)?
     var onOpen: (() -> Void)?
     private(set) var isRefreshing = false
@@ -238,28 +351,33 @@ final class ResetNoticeService: NSObject, UNUserNotificationCenterDelegate, URLS
     private var timer: Timer?
     private var wakeObserver: NSObjectProtocol?
     private var sendingNotification = false
-    private lazy var session: URLSession = {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.urlCache = nil
-        configuration.httpCookieStorage = nil
-        configuration.urlCredentialStorage = nil
-        configuration.httpShouldSetCookies = false
-        configuration.timeoutIntervalForRequest = 20
-        configuration.timeoutIntervalForResource = 30
-        return URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
-    }()
+    private let httpClient: ResetHTTPClient
+    private let now: () -> Date
+    private var generation = 0
+    private var stopped = false
 
-    init(cacheURL: URL, enableSystemNotifications: Bool = true) {
+    init(cacheURL: URL, enableSystemNotifications: Bool = true, configuration: URLSessionConfiguration = .ephemeral, now: @escaping () -> Date = Date.init) {
         self.cacheURL = cacheURL
+        self.httpClient = ResetHTTPClient(configuration: configuration)
+        self.now = now
         center = enableSystemNotifications ? UNUserNotificationCenter.current() : nil
         super.init()
-        if let data = try? Data(contentsOf: cacheURL), data.count < 2_000_000,
-           let saved = try? JSONDecoder().decode(ResetCache.self, from: data) { cache = saved }
+        if let file = try? FileHandle(forReadingFrom: cacheURL) {
+            defer { try? file.close() }
+            if let data = try? file.read(upToCount: 2_000_000), data.count < 2_000_000,
+               let saved = try? JSONDecoder().decode(ResetCache.self, from: data) { cache = saved }
+        }
         center?.delegate = self
     }
 
+    deinit {
+        timer?.invalidate()
+        if let wakeObserver { NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver) }
+        httpClient.cancel()
+    }
+
     var notices: [ResetNotice] {
-        mergeResetNotices(cache.snapshot?.notices ?? [], days: ResetDates.recentDays())
+        mergeResetNotices(cache.snapshot?.notices ?? [], days: ResetDates.recentDays(now: now()))
     }
 
     var unreadCount: Int { notices.filter { cache.unreadIDs.contains($0.id) }.count }
@@ -271,13 +389,14 @@ final class ResetNoticeService: NSObject, UNUserNotificationCenterDelegate, URLS
             return chinese ? "暂时无法同步，保留已同步消息；稍后自动重试。" : "Sync unavailable; keeping cached notices."
         }
         guard let snapshot = cache.snapshot else { return chinese ? "等待首次同步" : "Waiting for first sync" }
-        let stale = Date().timeIntervalSince(snapshot.checkedAt) > 30 * 60
+        let stale = now().timeIntervalSince(snapshot.checkedAt) > 30 * 60
         let suffix = stale ? (chinese ? " · 源站检查已超过 30 分钟" : " · Source check is over 30 minutes old") : ""
         return (chinese ? "每 10 分钟同步 · 更新于 " : "Checks every 10 minutes · Updated ") + ResetDates.time(snapshot.fetchedAt) + suffix
     }
 
     func start() {
         guard timer == nil else { return }
+        stopped = false
         refreshNotificationPermission(requestIfNeeded: true)
         let timer = Timer(timeInterval: 10 * 60, repeats: true) { [weak self] _ in self?.refresh() }
         RunLoop.main.add(timer, forMode: .common)
@@ -289,11 +408,15 @@ final class ResetNoticeService: NSObject, UNUserNotificationCenterDelegate, URLS
     }
 
     func stop() {
+        stopped = true
+        sendingNotification = false
+        generation += 1
+        isRefreshing = false
         timer?.invalidate()
         timer = nil
         if let wakeObserver { NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver) }
         wakeObserver = nil
-        session.invalidateAndCancel()
+        httpClient.cancel()
     }
 
     func markRead() {
@@ -317,14 +440,16 @@ final class ResetNoticeService: NSObject, UNUserNotificationCenterDelegate, URLS
     }
 
     func refreshNotificationPermission(requestIfNeeded: Bool = false) {
+        let cycle = generation
         center?.getNotificationSettings { [weak self] settings in
             DispatchQueue.main.async {
-                guard let self else { return }
+                guard let self, !self.stopped, self.generation == cycle else { return }
                 if requestIfNeeded, settings.authorizationStatus == .notDetermined {
                     self.center?.requestAuthorization(options: [.alert]) { [weak self] _, error in
                         DispatchQueue.main.async {
-                            self?.lastNotificationError = error?.localizedDescription
-                            self?.refreshNotificationPermission()
+                            guard let self, !self.stopped, self.generation == cycle else { return }
+                            self.lastNotificationError = error?.localizedDescription
+                            self.refreshNotificationPermission()
                         }
                     }
                     return
@@ -337,57 +462,70 @@ final class ResetNoticeService: NSObject, UNUserNotificationCenterDelegate, URLS
     }
 
     func refresh() {
-        guard !isRefreshing else { return }
+        guard !stopped, !isRefreshing else { return }
+        let cycle = generation
+        let syncDate = now()
+        let syncDay = ResetDates.day(syncDate)
         isRefreshing = true
         lastError = nil
         onChange?()
         refreshNotificationPermission()
         load(path: "version") { [weak self] result in
-            guard let self else { return }
+            guard let self, !self.stopped, self.generation == cycle else { return }
             do {
                 let version = try JSONDecoder().decode(ResetVersionResponse.self, from: result.get())
                 guard !version.version.isEmpty, version.version.count <= 128,
-                      version.today == ResetDates.day(Date()),
+                      version.today == syncDay,
                       let checkedAt = ResetDates.parse(version.checkedAt),
-                      checkedAt <= Date().addingTimeInterval(15 * 60) else { throw ResetSyncError.invalidData }
+                      checkedAt <= syncDate.addingTimeInterval(15 * 60),
+                      ResetDates.day(self.now()) == syncDay else { throw ResetSyncError.invalidData }
                 if let previous = self.cache.snapshot, checkedAt < previous.checkedAt.addingTimeInterval(-60) {
                     throw ResetSyncError.invalidData
                 }
-                let days = ResetDates.recentDays()
-                if var previous = self.cache.snapshot, previous.version == version.version, previous.days == days {
+                let days = ResetDates.recentDays(now: syncDate)
+                if self.cache.fingerprintVersion == 2, var previous = self.cache.snapshot, previous.version == version.version, previous.days == days {
                     previous.checkedAt = checkedAt
-                    previous.fetchedAt = Date()
+                    previous.fetchedAt = self.now()
                     self.cache.snapshot = previous
                     self.finish()
                     return
                 }
-                self.loadDays(days, version: version.version, checkedAt: checkedAt)
+                self.loadDays(days, version: version.version, checkedAt: checkedAt, cycle: cycle)
             } catch { self.finish(error: error) }
         }
     }
 
-    private func loadDays(_ days: [String], version: String, checkedAt: Date) {
+    private func loadDays(_ days: [String], version: String, checkedAt: Date, cycle: Int) {
         var remaining = days.count
         var collected: [ResetNotice] = []
         var failure: Error?
         for day in days {
             load(path: "days/" + day) { [weak self] result in
-                guard let self else { return }
+                guard let self, !self.stopped, self.generation == cycle else { return }
                 do { collected.append(contentsOf: try parseResetDay(result.get(), expectedDay: day, expectedVersion: version)) }
                 catch { failure = error }
                 remaining -= 1
                 guard remaining == 0 else { return }
                 if let failure { self.finish(error: failure); return }
+                guard ResetDates.day(self.now()) == days.first else { self.finish(error: ResetSyncError.invalidData); return }
                 let notices = mergeResetNotices(collected, days: days)
                 let previous = self.cache.snapshot == nil ? nil : self.cache.fingerprints
-                let changed = changedResetNotices(notices, previous: previous, today: ResetDates.day(Date()))
+                let legacy = self.cache.fingerprintVersion == 2 ? nil : self.cache.snapshot?.notices
+                let changed = changedResetNotices(notices, previous: previous, today: days[0], legacyNotices: legacy)
+                if let legacy {
+                    let notifiedPresentations = Set(legacy.filter { self.cache.notifiedKeys.contains($0.fingerprint) }.map(\.presentationFingerprint))
+                    for notice in notices where notifiedPresentations.contains(notice.presentationFingerprint) {
+                        self.cache.notifiedKeys.insert(notice.fingerprint)
+                    }
+                }
+                self.cache.fingerprintVersion = 2
                 let currentIDs = Set(notices.map(\.id))
                 self.cache.unreadIDs.formIntersection(currentIDs)
                 self.cache.pendingIDs.formIntersection(currentIDs)
                 self.cache.unreadIDs.formUnion(changed.map(\.id))
                 self.cache.pendingIDs.formUnion(changed.map(\.id))
                 self.cache.fingerprints = Dictionary(uniqueKeysWithValues: notices.map { ($0.id, $0.fingerprint) })
-                self.cache.snapshot = ResetSnapshot(version: version, days: days, fetchedAt: Date(), checkedAt: checkedAt, notices: notices)
+                self.cache.snapshot = ResetSnapshot(version: version, days: days, fetchedAt: self.now(), checkedAt: checkedAt, notices: notices)
                 self.finish()
             }
         }
@@ -395,21 +533,7 @@ final class ResetNoticeService: NSObject, UNUserNotificationCenterDelegate, URLS
 
     private func load(path: String, completion: @escaping (Result<Data, Error>) -> Void) {
         let url = URL(string: "https://aihot.news/api/site/codex-reset/" + path)!
-        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("Codex-Helper-Reset-Monitor/0.8.5", forHTTPHeaderField: "User-Agent")
-        session.dataTask(with: request) { data, response, error in
-            DispatchQueue.main.async {
-                if let error { completion(.failure(error)); return }
-                guard let response = response as? HTTPURLResponse, response.statusCode == 200,
-                      response.url?.scheme == "https", response.url?.host == "aihot.news",
-                      let data, data.count <= 1_000_000,
-                      response.expectedContentLength <= 1_000_000 else {
-                    completion(.failure(ResetSyncError.invalidData)); return
-                }
-                completion(.success(data))
-            }
-        }.resume()
+        httpClient.load(url, completion: completion)
     }
 
     private func finish(error: Error? = nil) {
@@ -430,22 +554,23 @@ final class ResetNoticeService: NSObject, UNUserNotificationCenterDelegate, URLS
     }
 
     private func deliverPendingNotifications() {
-        guard notificationsAllowed, !sendingNotification, lastError == nil, let center,
+        guard !stopped, notificationsAllowed, !sendingNotification, lastError == nil, let center,
               saveCache() else { return }
         let pending = notices.filter { cache.pendingIDs.contains($0.id) && !cache.notifiedKeys.contains($0.fingerprint) }
         guard let latest = pending.first else { return }
         let content = UNMutableNotificationContent()
         content.title = "Codex 重置消息更新 · AIHOT"
         content.subtitle = latest.status.label(chinese: true)
-        content.body = "\(latest.day) · \(latest.title)\n\(latest.window ?? latest.scope)\n第三方消息，实际额度以 Codex 为准。"
+        content.body = "\(latest.day) · \(latest.title)\n\(latest.timeDescription(chinese: true))\n\(latest.scope) · 第三方消息，实际额度以 Codex 为准。"
         if pending.count > 1 { content.body += "另有 \(pending.count - 1) 条更新。" }
         content.threadIdentifier = "codex-reset-notices"
         let key = resetDigest(pending.map(\.fingerprint).sorted().joined(separator: ":"))
         let request = UNNotificationRequest(identifier: "codex-reset-" + key, content: content, trigger: nil)
         sendingNotification = true
+        let cycle = generation
         center.add(request) { [weak self] error in
             DispatchQueue.main.async {
-                guard let self else { return }
+                guard let self, !self.stopped, self.generation == cycle else { return }
                 self.sendingNotification = false
                 self.lastNotificationError = error?.localizedDescription
                 if error == nil {
@@ -454,18 +579,12 @@ final class ResetNoticeService: NSObject, UNUserNotificationCenterDelegate, URLS
                         if self.cache.fingerprints[notice.id] == notice.fingerprint { self.cache.pendingIDs.remove(notice.id) }
                     }
                     self.cache.notifiedKeys = Set(self.cache.notifiedKeys.sorted().suffix(512))
-                    _ = self.saveCache()
+                    if !self.saveCache() { self.lastNotificationError = "Could not save notification state" }
                 }
                 self.onChange?()
+                if error == nil { self.deliverPendingNotifications() }
             }
         }
-    }
-
-    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
-        let url = request.url
-        let allowed = url?.scheme == "https" && url?.host == "aihot.news" && url?.user == nil && url?.password == nil
-            && (url?.port == nil || url?.port == 443) && url?.path.hasPrefix("/api/site/codex-reset/") == true
-        completionHandler(allowed ? request : nil)
     }
 
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {

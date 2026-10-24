@@ -8,14 +8,23 @@ enum QuotaLevel: Equatable {
 }
 
 func quotaLevel(for remainingPercent: Double?) -> QuotaLevel {
-    guard let remainingPercent else { return .unavailable }
+    guard let remainingPercent, remainingPercent.isFinite, (0...100).contains(remainingPercent) else { return .unavailable }
     if remainingPercent < 10 { return .critical }
     if remainingPercent < 50 { return .attention }
     return .healthy
 }
 
 func formatQuotaPercent(_ value: Double) -> String {
-    value.rounded() == value ? "\(Int(value))%" : String(format: "%.1f%%", value)
+    guard value.isFinite, (0...100).contains(value) else { return "—" }
+    return value.rounded() == value ? "\(Int(value))%" : String(format: "%.1f%%", value)
+}
+
+func quotaDistanceSeconds(until reset: Date, from now: Date) -> Int? {
+    let seconds = reset.timeIntervalSince(now)
+    guard seconds.isFinite else { return nil }
+    if seconds <= 0 { return 0 }
+    guard seconds <= 253_402_300_799 else { return nil }
+    return Int(seconds)
 }
 
 func formatCompactResetDistance(
@@ -23,7 +32,8 @@ func formatCompactResetDistance(
     from now: Date = Date(),
     isChinese: Bool
 ) -> String {
-    let totalMinutes = max(Int(ceil(reset.timeIntervalSince(now) / 60)), 0)
+    guard quotaDistanceSeconds(until: reset, from: now) != nil else { return "—" }
+    let totalMinutes = Int(ceil(max(reset.timeIntervalSince(now), 0) / 60))
     let days = totalMinutes / (24 * 60)
     let hours = (totalMinutes % (24 * 60)) / 60
     let minutes = totalMinutes % 60
@@ -42,7 +52,8 @@ func formatMenuBarResetLabel(
     from now: Date = Date(),
     isChinese: Bool
 ) -> String {
-    let totalMinutes = max(Int(ceil(reset.timeIntervalSince(now) / 60)), 0)
+    guard quotaDistanceSeconds(until: reset, from: now) != nil else { return "—" }
+    let totalMinutes = Int(ceil(max(reset.timeIntervalSince(now), 0) / 60))
     let days = totalMinutes / (24 * 60)
     let hours = totalMinutes / 60
 
@@ -60,7 +71,7 @@ func formatResetCountdown(
     from now: Date = Date(),
     isChinese: Bool
 ) -> String {
-    let totalSeconds = max(Int(reset.timeIntervalSince(now)), 0)
+    guard let totalSeconds = quotaDistanceSeconds(until: reset, from: now) else { return "—" }
     let days = totalSeconds / (24 * 60 * 60)
     let hours = (totalSeconds % (24 * 60 * 60)) / (60 * 60)
     let minutes = (totalSeconds % (60 * 60)) / 60

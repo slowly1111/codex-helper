@@ -78,4 +78,28 @@ check(!missingConfig.autoRetryEnabled && !missingConfig.automaticUpdates, "legac
 check(ResetDates.time(ResetDates.parse("2026-10-23T07:00:00Z")!) == "10/23 15:00", "notice time is Beijing time")
 check(baseline.first { $0.status == .announced }?.window == "网站推算：10/23 15:00 至 10/24 01:00", "estimate retains precise cross-day window")
 
+let confirmedNotice = baseline.first { $0.status == .confirmed }!
+check(confirmedNotice.timeDescription(chinese: true).contains(confirmedNotice.confirmationTime!), "native notice includes confirmation time")
+check(confirmedNotice.timeDescription(chinese: true).contains("北京时间"), "notification names its time zone")
+check(baseline.first { $0.status == .announced }!.timeDescription(chinese: true).contains("网站推算"), "estimated timing remains qualified")
+var reordered = try JSONSerialization.jsonObject(with: bytes) as! [String: Any]
+var reorderedEvents = reordered["events"] as! [[String: Any]]
+var posts = reorderedEvents[0]["posts"] as! [[String: Any]]
+posts.append(["id": "99999999999999", "url": "https://x.com/thsottiaux/status/99999999999999", "text": "Second public source"])
+reorderedEvents[0]["posts"] = posts
+reordered["events"] = reorderedEvents
+let beforeOrderChange = try parseResetDay(encoded(reordered), expectedDay: today, expectedVersion: version)
+reorderedEvents[0]["posts"] = Array(posts.reversed())
+reordered["events"] = reorderedEvents
+let orderedNotices = try parseResetDay(encoded(reordered), expectedDay: today, expectedVersion: version)
+check(orderedNotices[0].fingerprint == beforeOrderChange[0].fingerprint, "source post order does not trigger duplicate alerts")
+reorderedEvents.append(reorderedEvents[0])
+reordered["events"] = reorderedEvents
+check(rejects(try encoded(reordered)), "conflicting duplicate IDs reject the day snapshot")
+let tied = mergeResetNotices(baseline + confirmed, days: days)
+check(tied == mergeResetNotices(Array((baseline + confirmed).reversed()), days: days), "equal revision timestamps merge deterministically")
+
+let oldFingerprints = Dictionary(uniqueKeysWithValues: baseline.map { ($0.id, "legacy-" + $0.fingerprint) })
+check(changedResetNotices(baseline, previous: oldFingerprints, today: today, legacyNotices: baseline).isEmpty, "legacy fingerprint migration does not notify unchanged messages")
+check(changedResetNotices(confirmed, previous: oldFingerprints, today: today, legacyNotices: baseline).count == 1, "legacy migration still alerts real pending-to-confirmed transition")
 print("RESET_TESTS_OK cases=\(checks)")

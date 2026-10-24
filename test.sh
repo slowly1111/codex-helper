@@ -21,8 +21,11 @@ xcrun swiftc "${COMMON[@]}" "${LIBRARY_SOURCES[@]}" "$ROOT/Tests/Safety/main.swi
 CODEX_HELPER_DISABLE_ACCESSIBILITY_PROMPTS=1 "$BUILD_DIR/SafetyTests"
 xcrun swiftc "${COMMON[@]}" "$ROOT/Sources/ResetNotices.swift" "$ROOT/Sources/Config.swift" "$ROOT/Tests/ResetNotices/main.swift" "${FRAMEWORKS[@]}" -o "$BUILD_DIR/ResetNoticeTests"
 "$BUILD_DIR/ResetNoticeTests"
+xcrun swiftc "${COMMON[@]}" "$ROOT/Sources/ResetNotices.swift" "$ROOT/Sources/Config.swift" "$ROOT/Tests/Networking/main.swift" "${FRAMEWORKS[@]}" -o "$BUILD_DIR/NetworkingTests"
+"$BUILD_DIR/NetworkingTests"
+xcrun swiftc "${COMMON[@]}" -typecheck "$ROOT/WidgetExtension/CodexHelperWidget.swift" "$ROOT/Sources/WidgetSnapshot.swift" -framework SwiftUI -framework WidgetKit
 
-if [[ "$(xcode-select -p)" == */Xcode.app/Contents/Developer ]]; then
+if [[ "$(xcode-select -p)" == *.app/Contents/Developer ]]; then
   xcodebuild -quiet -project "$ROOT/CodexHelper.xcodeproj" -scheme CodexHelper \
     -configuration Debug -derivedDataPath "$BUILD_DIR/xcode" CODE_SIGNING_ALLOWED=NO build
 else

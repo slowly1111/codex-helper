@@ -908,7 +908,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func formatResetDistance(_ date: Date) -> String {
-        let totalMinutes = max(Int(ceil(date.timeIntervalSinceNow / 60)), 0)
+        let now = Date()
+        guard quotaDistanceSeconds(until: date, from: now) != nil else { return "—" }
+        let totalMinutes = Int(ceil(max(date.timeIntervalSince(now), 0) / 60))
         let days = totalMinutes / (24 * 60)
         let hours = (totalMinutes % (24 * 60)) / 60
         let minutes = totalMinutes % 60

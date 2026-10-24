@@ -30,23 +30,11 @@ struct ResetNoticesView: View {
                     Text(latest.status.label(chinese: model.isChinese))
                         .font(.caption2)
                         .foregroundStyle(.secondary)
-                    if let window = latest.window {
-                        Text(window + (model.isChinese ? "（北京时间）" : " (Beijing time)"))
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(3)
-                            .fixedSize(horizontal: false, vertical: true)
-                    } else if let confirmedAt = latest.confirmationTime {
-                        Text(model.isChinese ? "来源确认帖：\(confirmedAt)（北京时间）" : "Source confirmation: \(confirmedAt) (Beijing time)")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(3)
-                            .fixedSize(horizontal: false, vertical: true)
-                    } else {
-                        Text(model.isChinese ? "具体时间尚未公布" : "Exact time not announced")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
+                    Text(latest.timeDescription(chinese: model.isChinese))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
                 } else {
                     Text(model.resetStatus)
                         .font(.caption)
