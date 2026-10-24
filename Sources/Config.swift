@@ -11,9 +11,9 @@ struct AgentConfig: Codable, Equatable {
 
     init(
         language: String = "auto",
-        autoRetryEnabled: Bool = true,
+        autoRetryEnabled: Bool = false,
         launchAtLogin: Bool = true,
-        automaticUpdates: Bool = true,
+        automaticUpdates: Bool = false,
         showQuotaInMenuBar: Bool = true,
         showQuotaWidget: Bool = false,
         showSparkQuota: Bool = false
@@ -40,9 +40,9 @@ struct AgentConfig: Codable, Equatable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         language = try container.decodeIfPresent(String.self, forKey: .language) ?? "auto"
-        autoRetryEnabled = try container.decodeIfPresent(Bool.self, forKey: .autoRetryEnabled) ?? true
+        autoRetryEnabled = try container.decodeIfPresent(Bool.self, forKey: .autoRetryEnabled) ?? false
         launchAtLogin = try container.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? true
-        automaticUpdates = try container.decodeIfPresent(Bool.self, forKey: .automaticUpdates) ?? true
+        automaticUpdates = try container.decodeIfPresent(Bool.self, forKey: .automaticUpdates) ?? false
         showQuotaInMenuBar = try container.decodeIfPresent(Bool.self, forKey: .showQuotaInMenuBar) ?? true
         showQuotaWidget = try container.decodeIfPresent(Bool.self, forKey: .showQuotaWidget) ?? false
         showSparkQuota = try container.decodeIfPresent(Bool.self, forKey: .showSparkQuota) ?? false

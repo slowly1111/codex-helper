@@ -52,7 +52,7 @@ struct StatusRailView: View {
 
                 Label(model.statusTitle, systemImage: "circle.fill")
                     .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(model.autoRetryEnabled && model.accessibilityGranted ? Color.green : Color.orange)
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
 
                 Text(model.usageFooter ?? "")

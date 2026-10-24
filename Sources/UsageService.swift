@@ -285,12 +285,18 @@ final class CodexUsageService {
     }
 
     private func findCodexExecutable() -> URL? {
-        var candidates: [URL] = []
+        var bundles: [URL] = []
         if let bundleURL = NSRunningApplication.runningApplications(withBundleIdentifier: "com.openai.codex").first?.bundleURL {
-            candidates.append(bundleURL.appendingPathComponent("Contents/Resources/codex"))
+            bundles.append(bundleURL)
         }
-        candidates.append(URL(fileURLWithPath: "/Applications/ChatGPT.app/Contents/Resources/codex"))
-        candidates.append(URL(fileURLWithPath: "/Applications/Codex.app/Contents/Resources/codex"))
+        bundles.append(URL(fileURLWithPath: "/Applications/ChatGPT.app"))
+        bundles.append(URL(fileURLWithPath: "/Applications/Codex.app"))
+        let candidates = bundles.flatMap { bundleURL in
+            [
+                bundleURL.appendingPathComponent("Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex"),
+                bundleURL.appendingPathComponent("Contents/Resources/codex")
+            ]
+        }
         return candidates.first {
             FileManager.default.isExecutableFile(atPath: $0.path) && isOfficialCodexExecutable($0)
         }

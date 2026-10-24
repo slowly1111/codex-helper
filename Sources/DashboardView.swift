@@ -8,7 +8,7 @@ struct DashboardView: View {
     private var primary: DashboardUsageRow? { model.usageRows.first }
     private var primaryLevel: QuotaLevel { quotaLevel(for: primary?.remainingPercent) }
     private var statusColor: Color {
-        model.accessibilityGranted && model.autoRetryEnabled ? .green : .orange
+        model.usageRows.isEmpty || model.usageIsRefreshing ? .orange : .green
     }
 
     var body: some View {
@@ -17,7 +17,9 @@ struct DashboardView: View {
                 header
                 quotaOverview
                 Divider().opacity(0.55)
-                operations
+                ResetNoticesView(model: model, dispatcher: dispatcher)
+                Divider().opacity(0.55)
+                preferencesSection
                 Divider().opacity(0.55)
                 updates
                 Divider().opacity(0.55)
@@ -120,49 +122,12 @@ struct DashboardView: View {
         .quotaSurface(level: primaryLevel, cornerRadius: 22)
     }
 
-    private var operations: some View {
-        HStack(alignment: .top, spacing: 28) {
-            retrySection
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Divider()
-            preferencesSection
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .fixedSize(horizontal: false, vertical: true)
-    }
-
-    private var retrySection: some View {
-        VStack(alignment: .leading, spacing: 11) {
-            sectionHeading(model.isChinese ? "自动重试" : "Auto Retry", symbol: "arrow.triangle.2.circlepath", color: .purple)
-            Text(model.statusTitle)
-                .font(.system(size: 14, weight: .medium))
-            Text(model.statusDetail)
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            Toggle(
-                model.isChinese ? "启用自动重试" : "Enable Auto Retry",
-                isOn: toggleBinding(model.autoRetryEnabled, selector: dispatcher.actions.toggleAutoRetry)
-            )
-            .toggleStyle(.checkbox)
-            Button(model.isChinese ? "运行端到端测试…" : "Run End-to-End Test…") {
-                dispatcher.send(dispatcher.actions.testAutoRetry)
-            }
-            .buttonStyle(.bordered)
-            .disabled(!model.accessibilityGranted || !model.autoRetryEnabled)
-
-            if !model.accessibilityGranted {
-                Button(model.isChinese ? "授予辅助功能权限…" : "Allow Accessibility…") {
-                    dispatcher.send(dispatcher.actions.openAccessibility)
-                }
-                .buttonStyle(.borderedProminent)
-            }
-        }
-    }
-
     private var preferencesSection: some View {
         VStack(alignment: .leading, spacing: 11) {
             sectionHeading(model.isChinese ? "偏好设置" : "Preferences", symbol: "slider.horizontal.3", color: .teal)
+            Text(model.statusDetail)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
             Toggle(
                 model.isChinese ? "登录时启动" : "Launch at login",
                 isOn: toggleBinding(model.launchAtLogin, selector: dispatcher.actions.toggleLaunchAtLogin)
@@ -180,7 +145,7 @@ struct DashboardView: View {
             .toggleStyle(.checkbox)
 
             HStack {
-                Text(model.isChinese ? "界面与续跑语言" : "Interface and retry language")
+                Text(model.isChinese ? "界面语言" : "Interface language")
                     .font(.system(size: 12))
                 Spacer()
                 Picker("", selection: languageBinding) {
@@ -213,11 +178,6 @@ struct DashboardView: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            Toggle(
-                model.isChinese ? "自动下载" : "Auto-download",
-                isOn: toggleBinding(model.automaticUpdates, selector: dispatcher.actions.toggleAutomaticUpdates)
-            )
-            .toggleStyle(.checkbox)
             Button(model.updateActionTitle) {
                 dispatcher.send(dispatcher.actions.performUpdate)
             }

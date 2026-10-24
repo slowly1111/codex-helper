@@ -9,7 +9,7 @@ struct MenuBarPanelView: View {
         VStack(spacing: MenuBarPanelMetrics.sectionSpacing) {
             MenuBarPanelHeader(model: model)
             MenuBarQuotaCard(model: model)
-            MenuBarStatusRow(model: model, dispatcher: dispatcher)
+            ResetNoticesView(model: model, dispatcher: dispatcher, compact: true)
             Divider()
             MenuBarActionBar(model: model, dispatcher: dispatcher)
         }

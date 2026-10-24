@@ -26,13 +26,14 @@
 		AAEC6F2242B8FF20C398D0EE /* Agent.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE9E8C27B10C323132510F90 /* Agent.swift */; };
 		BD2E9EF659189296DBAC8AEA /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0AFB7C4710F04FC24262B9C /* AppDelegate.swift */; };
 		CDFCD09F0053C6EC8283BAF7 /* AutoRetryActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = B65AADBB104529ABD2194653 /* AutoRetryActivity.swift */; };
-		CE2A25B1E25078A8CCAD23EE /* MenuBarStatusRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD91B112C4E9C126946682BE /* MenuBarStatusRow.swift */; };
 		D5704D21F73B312A65B78743 /* Dashboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CD72B414385AF8942EA8B50 /* Dashboard.swift */; };
 		D61A78269A7469F5A840622E /* MenuBarActionBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED3F1A69EBF614C16C9AB976 /* MenuBarActionBar.swift */; };
 		DD0A73B2E635CA7CAB543ED8 /* QuotaWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BBEB27993D7F914DF81D83A /* QuotaWidget.swift */; };
 		E9B8DF8892297EFA4DAE45BA /* WidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6B2F593D30B90A7CEB8AE43 /* WidgetSnapshot.swift */; };
 		EB1D7F80827ED6BFD806BD1F /* MenuBarPanelHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECA86C73461B27AA5ADC2EDB /* MenuBarPanelHeader.swift */; };
 		F686EF43037A36152EDB2FFF /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BD3E0375A5D4EB5797F827B /* main.swift */; };
+		2CD49D0C9B075789CACF33A8 /* ResetNotices.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D13E4ADD46C13D67D7E2AA4 /* ResetNotices.swift */; };
+		3ABB8739FEB5170C8779FCC0 /* ResetNoticesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADB907B1EA1AC36081E0F394 /* ResetNoticesView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -74,7 +75,6 @@
 		80A4E2CA4FABC84A17E47275 /* MenuBarPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarPanelView.swift; sourceTree = "<group>"; };
 		8401EEF3C4DBE21A5AD03F88 /* AppIcon.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = AppIcon.icns; sourceTree = "<group>"; };
 		A460CF51591D5AFDC68AB3E1 /* MenuBarQuotaCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarQuotaCard.swift; sourceTree = "<group>"; };
-		AD91B112C4E9C126946682BE /* MenuBarStatusRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarStatusRow.swift; sourceTree = "<group>"; };
 		B65AADBB104529ABD2194653 /* AutoRetryActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutoRetryActivity.swift; sourceTree = "<group>"; };
 		B6B2F593D30B90A7CEB8AE43 /* WidgetSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetSnapshot.swift; sourceTree = "<group>"; };
 		BB6460A841DAE81DCC9BA877 /* QuotaVisuals.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaVisuals.swift; sourceTree = "<group>"; };
@@ -86,6 +86,8 @@
 		ED3F1A69EBF614C16C9AB976 /* MenuBarActionBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarActionBar.swift; sourceTree = "<group>"; };
 		F0AFB7C4710F04FC24262B9C /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		F20A8C0EAF1D15280005E685 /* CodexUpdates.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexUpdates.swift; sourceTree = "<group>"; };
+		8D13E4ADD46C13D67D7E2AA4 /* ResetNotices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResetNotices.swift; sourceTree = "<group>"; };
+		ADB907B1EA1AC36081E0F394 /* ResetNoticesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResetNoticesView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -141,13 +143,14 @@
 				D4759F114255C6D7AC7CD6C5 /* MenuBarPanelMetrics.swift */,
 				80A4E2CA4FABC84A17E47275 /* MenuBarPanelView.swift */,
 				A460CF51591D5AFDC68AB3E1 /* MenuBarQuotaCard.swift */,
-				AD91B112C4E9C126946682BE /* MenuBarStatusRow.swift */,
 				497ED6463C7B13B3DD0AEB8F /* QuotaSwiftUIComponents.swift */,
 				BB6460A841DAE81DCC9BA877 /* QuotaVisuals.swift */,
 				7BBEB27993D7F914DF81D83A /* QuotaWidget.swift */,
 				13C44CBBBF5C2AFE8B21D3C8 /* StatusRailView.swift */,
 				4135D4947A76EF1FF5CABEA4 /* Updater.swift */,
 				5BBCE5FD4046E4951F66D91E /* UsageService.swift */,
+				ADB907B1EA1AC36081E0F394 /* ResetNoticesView.swift */,
+				8D13E4ADD46C13D67D7E2AA4 /* ResetNotices.swift */,
 				B6B2F593D30B90A7CEB8AE43 /* WidgetSnapshot.swift */,
 			);
 			path = Sources;
@@ -261,13 +264,14 @@
 				37380E2E9AB3AB6795743CB6 /* MenuBarPanelMetrics.swift in Sources */,
 				08C258E6FF09E674E6C3A684 /* MenuBarPanelView.swift in Sources */,
 				A89417938E467E0454851F66 /* MenuBarQuotaCard.swift in Sources */,
-				CE2A25B1E25078A8CCAD23EE /* MenuBarStatusRow.swift in Sources */,
 				8F551FF31653237A6152F34F /* QuotaSwiftUIComponents.swift in Sources */,
 				57DD7772163F29A5156276A3 /* QuotaVisuals.swift in Sources */,
 				DD0A73B2E635CA7CAB543ED8 /* QuotaWidget.swift in Sources */,
 				03B199021B5B606CE2F21B85 /* StatusRailView.swift in Sources */,
 				83CD860A774180665918DEDF /* Updater.swift in Sources */,
 				8E47D5834006B1D1C83E0728 /* UsageService.swift in Sources */,
+				3ABB8739FEB5170C8779FCC0 /* ResetNoticesView.swift in Sources */,
+				2CD49D0C9B075789CACF33A8 /* ResetNotices.swift in Sources */,
 				E9B8DF8892297EFA4DAE45BA /* WidgetSnapshot.swift in Sources */,
 				F686EF43037A36152EDB2FFF /* main.swift in Sources */,
 			);

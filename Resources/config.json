@@ -1,6 +1,6 @@
 {
-  "autoRetryEnabled": true,
-  "automaticUpdates": true,
+  "autoRetryEnabled": false,
+  "automaticUpdates": false,
   "language": "auto",
   "launchAtLogin": true,
   "showQuotaInMenuBar": true,

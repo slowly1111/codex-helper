@@ -1,3 +1,5 @@
+> Historical upstream documentation. This personal fork disables automatic retry and software updates. See [README](../README.md) for current behavior and build instructions.
+
 # 工作原理
 
 ## 设计目标

@@ -38,6 +38,12 @@ struct DashboardModel {
     let updateActionEnabled: Bool
     let automaticUpdates: Bool
     let latestUpdates: [DashboardLink]
+    let resetNotices: [ResetNotice]
+    let resetStatus: String
+    let resetUnreadCount: Int
+    let resetIsRefreshing: Bool
+    let resetNotificationsAllowed: Bool
+    let resetNotificationError: String?
     let launchAtLogin: Bool
     let showQuotaInMenuBar: Bool
     let showQuotaWidget: Bool
@@ -48,15 +54,15 @@ struct DashboardModel {
 struct DashboardActions {
     let target: AnyObject
     let showDashboard: Selector
-    let openAccessibility: Selector
-    let toggleAutoRetry: Selector
-    let testAutoRetry: Selector
     let refreshUsage: Selector
     let toggleQuotaWidget: Selector
     let showNativeWidgetHelp: Selector
     let performUpdate: Selector
     let toggleAutomaticUpdates: Selector
     let refreshNews: Selector
+    let refreshResetNotices: Selector
+    let markResetNoticesRead: Selector
+    let configureResetNotifications: Selector
     let openLink: Selector
     let toggleLaunchAtLogin: Selector
     let toggleMenuBarQuota: Selector

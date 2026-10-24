@@ -136,6 +136,17 @@ func containsNewTurnActivity(_ text: String) -> Bool {
         || text.contains(#""type": "task_started""#)
 }
 
+func sessionActivityRequiresCancellation(at path: URL?, since offset: UInt64) throws -> Bool {
+    guard let path else { return true }
+    let handle = try FileHandle(forReadingFrom: path)
+    defer { try? handle.close() }
+    guard try handle.seekToEnd() >= offset else { return true }
+    try handle.seek(toOffset: offset)
+    let data = try handle.readToEnd() ?? Data()
+    guard let text = String(data: data, encoding: .utf8) else { return true }
+    return containsNewTurnActivity(text)
+}
+
 final class AgentLogger {
     private let formatter = ISO8601DateFormatter()
     private let logURL: URL
@@ -529,22 +540,11 @@ final class AutoRetryAgent {
     }
 
     private func hasNewActivity(since baseline: SessionBaseline) -> Bool {
-        guard let path = baseline.path,
-              let handle = try? FileHandle(forReadingFrom: path) else {
-            return false
-        }
-        defer { try? handle.close() }
-
         do {
-            try handle.seek(toOffset: baseline.offset)
-            guard let data = try handle.readToEnd(),
-                  let text = String(data: data, encoding: .utf8) else {
-                return false
-            }
-            return containsNewTurnActivity(text)
+            return try sessionActivityRequiresCancellation(at: baseline.path, since: baseline.offset)
         } catch {
             logger.write("failed to inspect session activity: \(error.localizedDescription)")
-            return false
+            return true
         }
     }
 

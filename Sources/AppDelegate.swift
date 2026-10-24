@@ -10,6 +10,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         cacheURL: configStore.supportURL.appendingPathComponent("updates.json")
     )
     private let usageService = CodexUsageService()
+    private lazy var resetService = ResetNoticeService(
+        cacheURL: configStore.supportURL.appendingPathComponent("reset-notices.json")
+    )
     private lazy var updater = UpdateService(supportURL: configStore.supportURL)
     private var statusItem: NSStatusItem!
     private var statusContextMenu = NSMenu()
@@ -17,15 +20,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private lazy var dashboardActions = DashboardActions(
         target: self,
         showDashboard: #selector(showDashboard(_:)),
-        openAccessibility: #selector(openAccessibilitySettings(_:)),
-        toggleAutoRetry: #selector(settingsAutoRetryChanged(_:)),
-        testAutoRetry: #selector(testAutoRetry(_:)),
         refreshUsage: #selector(refreshUsage(_:)),
         toggleQuotaWidget: #selector(toggleQuotaWidget(_:)),
         showNativeWidgetHelp: #selector(showNativeWidgetHelp(_:)),
         performUpdate: #selector(performUpdateAction(_:)),
         toggleAutomaticUpdates: #selector(settingsAutomaticUpdatesChanged(_:)),
         refreshNews: #selector(refreshUpdates(_:)),
+        refreshResetNotices: #selector(refreshResetNotices(_:)),
+        markResetNoticesRead: #selector(markResetNoticesRead(_:)),
+        configureResetNotifications: #selector(configureResetNotifications(_:)),
         openLink: #selector(openDashboardLink(_:)),
         toggleLaunchAtLogin: #selector(settingsLaunchChanged(_:)),
         toggleMenuBarQuota: #selector(settingsShowQuotaChanged(_:)),
@@ -45,28 +48,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         configureStatusItem()
         startStatusRefreshTimer()
         syncLaunchAtLoginOnFirstRun()
-        if configStore.load().autoRetryEnabled {
-            agent.start()
-        }
+        // Personal fork: never resume tasks or replace this build automatically.
+        var config = configStore.load()
+        config.autoRetryEnabled = false
+        config.automaticUpdates = false
+        configStore.save(config)
         usageService.onChange = { [weak self] in self?.refreshUsageInterface() }
         usageService.start()
         updater.onChange = { [weak self] in self?.refreshUpdaterInterface() }
-        updater.start(automaticDownload: configStore.load().automaticUpdates)
         updatesService.refreshIfNeeded { [weak self] in
             self?.refreshNewsInterface()
         }
+        resetService.onChange = { [weak self] in self?.refreshInterface() }
+        resetService.onOpen = { [weak self] in self?.showDashboard(nil) }
+        resetService.start()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         agent.stop()
         usageService.stop()
         updater.stop()
+        resetService.stop()
         statusRefreshTimer?.invalidate()
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
         guard statusItem != nil else { return }
         refreshInterface()
+        resetService.refreshNotificationPermission()
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -163,15 +172,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         header.isEnabled = false
         menu.addItem(header)
 
-        let statusTitle: String
-        if !config.autoRetryEnabled {
-            statusTitle = text("Status: Auto Retry is off", "状态：自动重试已关闭")
-        } else if !agent.accessibilityGranted {
-            statusTitle = text("Status: Accessibility required", "状态：需要辅助功能权限")
-        } else {
-            statusTitle = autoRetryStatus().title
-        }
-        let status = NSMenuItem(title: statusTitle, action: nil, keyEquivalent: "")
+        let status = NSMenuItem(title: text("Quota refreshes every 5 minutes", "额度每 5 分钟自动刷新"), action: nil, keyEquivalent: "")
         status.isEnabled = false
         menu.addItem(status)
         menu.addItem(.separator())
@@ -193,14 +194,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(nativeWidgetItem)
         menu.addItem(.separator())
 
-        let retryItem = NSMenuItem(title: text("Auto Retry", "自动重试"), action: #selector(toggleAutoRetry(_:)), keyEquivalent: "")
-        retryItem.target = self
-        retryItem.state = config.autoRetryEnabled ? .on : .off
-        menu.addItem(retryItem)
-
-        let testItem = NSMenuItem(title: text("Test Auto Retry…", "测试自动重试…"), action: #selector(testAutoRetry(_:)), keyEquivalent: "")
-        testItem.target = self
-        menu.addItem(testItem)
+        let resetHeader = NSMenuItem(title: text("Reset notices · AIHOT (third party)", "重置消息 · AIHOT（第三方）"), action: nil, keyEquivalent: "")
+        resetHeader.isEnabled = false
+        menu.addItem(resetHeader)
+        for notice in resetService.notices.prefix(3) {
+            let title = "\(notice.day.suffix(5)) · \(notice.status.label(chinese: configStore.isChinese())) · \(notice.title)"
+            let item = NSMenuItem(title: title, action: #selector(openResetRecord(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = notice.sourceURL
+            menu.addItem(item)
+        }
+        let syncReset = NSMenuItem(title: text("Sync Reset Notices", "同步重置消息"), action: #selector(refreshResetNotices(_:)), keyEquivalent: "")
+        syncReset.target = self
+        menu.addItem(syncReset)
+        menu.addItem(.separator())
 
         let launchItem = NSMenuItem(title: text("Launch at Login", "登录时启动"), action: #selector(toggleLaunchAtLogin(_:)), keyEquivalent: "")
         launchItem.target = self
@@ -229,12 +236,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let dashboard = NSMenuItem(title: text("Open Codex Helper…", "打开 Codex Helper…"), action: #selector(showDashboard(_:)), keyEquivalent: ",")
         dashboard.target = self
         menu.addItem(dashboard)
-
-        if !agent.accessibilityGranted {
-            let permission = NSMenuItem(title: text("Open Accessibility Settings…", "打开辅助功能设置…"), action: #selector(openAccessibilitySettings(_:)), keyEquivalent: "")
-            permission.target = self
-            menu.addItem(permission)
-        }
 
         let logs = NSMenuItem(title: text("Open Log Folder", "打开日志文件夹"), action: #selector(openLogFolder(_:)), keyEquivalent: "")
         logs.target = self
@@ -328,6 +329,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSWorkspace.shared.open(url)
     }
 
+    @objc private func refreshResetNotices(_ sender: Any?) {
+        resetService.refresh()
+    }
+
+    @objc private func markResetNoticesRead(_ sender: Any?) {
+        resetService.markRead()
+    }
+
+    @objc private func configureResetNotifications(_ sender: Any?) {
+        resetService.configureNotifications()
+    }
+
+    @objc private func openResetRecord(_ sender: NSMenuItem) {
+        guard let url = sender.representedObject as? URL,
+              url.scheme == "https", url.host == "aihot.news",
+              url.path.hasPrefix("/codex-reset/history/") else { return }
+        NSWorkspace.shared.open(url)
+    }
+
     @objc private func refreshUpdates(_ sender: Any?) {
         updatesService.refreshIfNeeded(force: true) { [weak self] in
             self?.refreshNewsInterface()
@@ -339,20 +359,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func performUpdateAction(_ sender: Any?) {
-        switch updater.state {
-        case .ready:
-            if updater.installReadyUpdate() {
-                agent.stop()
-                usageService.stop()
-                updater.stop()
-                NSApp.terminate(nil)
-            } else {
-                showError(text("The update could not be installed automatically.", "无法自动安装更新。"))
-            }
-        case .available:
-            updater.downloadAvailableUpdate()
-        default:
-            updater.check(automaticDownload: false)
+        if let url = URL(string: "https://github.com/slowly1111/codex-helper") {
+            NSWorkspace.shared.open(url)
         }
     }
 
@@ -420,11 +428,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func settingsAutomaticUpdatesChanged(_ sender: NSButton) {
+        sender.state = .off
         var config = configStore.load()
-        config.automaticUpdates = sender.state == .on
+        config.automaticUpdates = false
         configStore.save(config)
-        updater.setAutomaticDownload(config.automaticUpdates)
-        if config.automaticUpdates { updater.check(automaticDownload: true) }
+        updater.stop()
         refreshInterface()
     }
 
@@ -530,6 +538,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 )
             } ?? "Codex"
             if isStale { secondary = "⚠︎ \(secondary)" }
+            if resetService.unreadCount > 0 { secondary = "● \(secondary)" }
             applyCompactQuotaTitle(primary: primary, secondary: secondary, to: button)
         } else {
             statusItem.length = NSStatusItem.squareLength
@@ -714,25 +723,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func makeDashboardModel() -> DashboardModel {
         let config = configStore.load()
         let chinese = configStore.isChinese()
-        let statusTitle: String
-        let statusDetail: String
-        if !config.autoRetryEnabled {
-            statusTitle = text("Auto Retry is off", "自动重试已关闭")
-            statusDetail = text(
-                "Capacity errors will remain in Codex until you continue them manually.",
-                "发生模型满载错误后，需要你在 Codex 中手动继续。"
-            )
-        } else if !agent.accessibilityGranted {
-            statusTitle = text("Accessibility permission required", "需要辅助功能权限")
-            statusDetail = text(
-                "Quota and updates still work, but Auto Retry cannot submit continuation messages until permission is allowed.",
-                "额度和更新仍可使用，但授权前自动重试无法在 Codex 中提交续跑消息。"
-            )
-        } else {
-            let retryStatus = autoRetryStatus()
-            statusTitle = retryStatus.title
-            statusDetail = retryStatus.detail
-        }
+        let statusTitle = text("Auto-refresh every 5 minutes", "每 5 分钟自动刷新")
+        let statusDetail = text(
+            "Quota refreshes every 5 minutes. Reading usage does not start model generation.",
+            "额度每 5 分钟自动刷新，查询不会调用模型生成回答。"
+        )
 
         let usageRows = makeDashboardUsageRows(showSparkQuota: config.showSparkQuota)
         let usageState: String
@@ -793,6 +788,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             updateActionEnabled: update.enabled,
             automaticUpdates: config.automaticUpdates,
             latestUpdates: links,
+            resetNotices: resetService.notices,
+            resetStatus: resetService.statusText(chinese: chinese),
+            resetUnreadCount: resetService.unreadCount,
+            resetIsRefreshing: resetService.isRefreshing,
+            resetNotificationsAllowed: resetService.notificationsAllowed,
+            resetNotificationError: resetService.lastNotificationError,
             launchAtLogin: loginItemEnabled,
             showQuotaInMenuBar: config.showQuotaInMenuBar,
             showQuotaWidget: config.showQuotaWidget,
@@ -867,35 +868,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func updatePresentation() -> (title: String, enabled: Bool, status: String) {
-        let current = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
-        switch updater.state {
-        case .checking:
-            return (text("Checking…", "正在检查…"), false, text("Checking GitHub Releases for updates.", "正在检查 GitHub Release。"))
-        case let .available(release):
-            return (
-                text("Download \(release.version)…", "下载 \(release.version)…"),
-                true,
-                text("Version \(release.version) is available. Current version: \(current).", "发现 \(release.version) 版本，当前版本：\(current)。")
-            )
-        case let .downloading(release):
-            return (text("Downloading \(release.version)…", "正在下载 \(release.version)…"), false, text("Downloading and verifying the signed update.", "正在下载并验证签名更新。"))
-        case let .ready(update):
-            return (
-                text("Install \(update.release.version) and Restart…", "安装 \(update.release.version) 并重启…"),
-                true,
-                text("The signed update is ready to install.", "签名更新已准备好安装。")
-            )
-        case .upToDate:
-            return (text("Check Again", "再次检查"), true, text("Codex Helper \(current) is up to date.", "Codex Helper \(current) 已是最新版本。"))
-        case let .failed(message):
-            return (
-                text("Retry Update Check", "重新检查更新"),
-                true,
-                text("Update check failed: \(message)", "更新检查失败，请稍后重试。")
-            )
-        case .idle:
-            return (text("Check for Updates…", "检查更新…"), true, text("Current version: \(current)", "当前版本：\(current)"))
-        }
+        (
+            text("Open My Repository", "打开我的仓库"),
+            true,
+            text("Personal build. Review and merge upstream updates manually.", "个人维护版，由你手动决定是否合并原作者更新。")
+        )
     }
 
     private func localizedUsageError(_ message: String) -> String {

@@ -1,3 +1,5 @@
+> Historical upstream documentation. This personal fork disables automatic retry and software updates. See [README](../README.md) for current behavior and build instructions.
+
 # Release and notarization
 
 Release builds are signed with a Developer ID Application certificate, submitted to Apple's notary service, stapled, and packaged in a signed/notarized DMG.

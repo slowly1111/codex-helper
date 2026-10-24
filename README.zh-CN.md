@@ -1,3 +1,3 @@
-# 中文 README
+# Codex Helper 个人维护版
 
-中文已经设为 GitHub 默认说明，请阅读 [README.md](README.md)。
+请查看 [README](README.md)，了解本版功能、构建方法及手动维护方式。
